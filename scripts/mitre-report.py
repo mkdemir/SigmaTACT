@@ -252,6 +252,33 @@ for log_source, count in log_source_counts.most_common():
                     </td>
                 </tr>
 '''
+
+# MITRE Other Techniques Table
+html_report += '''
+        <!-- MITRE Other Techniques Table -->
+        <h2>Other MITRE Techniques</h2>
+        <div class="table-container">
+            <table>
+                <tr><th>Other Technique</th><th>Count</th><th>Visualization</th></tr>
+'''
+for other_technique, count in other_technique_counts.most_common():
+    bar_length = (count / max(other_technique_counts.values())) * 100
+    html_report += f'''
+                <tr>
+                    <td>{other_technique}</td>
+                    <td>{count}</td>
+                    <td>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: {bar_length}%; background-color: #dc3545;"></div>
+                        </div>
+                    </td>
+                </tr>
+'''
+html_report += '''
+            </table>
+        </div>
+'''
+
 html_report += '''
             </table>
         </div>
