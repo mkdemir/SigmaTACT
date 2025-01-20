@@ -14,7 +14,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] - [%(levelname)s] - [Message: %(message)s]',
     handlers=[
-        logging.FileHandler("sigma_yaml_parser.log"),  # Logs to file
+        logging.FileHandler("sigma_yaml_parser.log", encoding='utf-8'),  # Logs to file
         logging.StreamHandler()  # Logs to console
     ]
 )
@@ -169,7 +169,7 @@ def load_processed_hashes(filename: str) -> Dict[str, str]:
     """
     if os.path.exists(filename):
         try:
-            with open(filename, 'r') as file:
+            with open(filename, 'r', encoding='utf-8') as file:
                 return json.load(file)
         except json.JSONDecodeError as e:
             logger.error(f"Error decoding JSON from {filename}: {e}")
@@ -209,11 +209,28 @@ def process_yaml_file(
 
             logger.info(f"Processing YAML file: {yaml_file} (hash: {file_hash})")
             for item in content:
-                item['file_hash'] = file_hash
-                item['process_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                item['file_path'] = yaml_file
-                item['file_name'] = os.path.basename(yaml_file)
-                json.dump(item, jsonl_file, default=date_converter)
+                # item['file_hash'] = file_hash
+                # item['process_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # item['file_path'] = yaml_file
+                # item['file_name'] = os.path.basename(yaml_file)
+                # json.dump(item, jsonl_file, default=date_converter)
+                # Extract only the title and description
+                output_item = {
+                    'title': item.get('title', None),
+                    'status': item.get('status', None),
+                    'description': item.get('description', None),
+                    'tags': item.get('tags', None),
+                    'logsource_category': item.get('logsource', {}).get('category', None),
+                    'level': item.get('level', None),
+                    'file_hash': file_hash,
+                    'process_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'file_path': os.path.dirname(yaml_file),  # Only the directory path, not the file name
+                    'file_name': os.path.basename(yaml_file)
+                }
+
+                # Dump the selected fields to the JSONL file
+                json.dump(output_item, jsonl_file, default=date_converter, ensure_ascii=False)
+                
                 jsonl_file.write("\n")
 
             updated_hashes[yaml_file] = file_hash
@@ -278,7 +295,7 @@ def load_and_process_yaml(
 
 
     # Open the output file in append mode
-    with open(output_filename, 'a') as jsonl_file:
+    with open(output_filename, 'w', encoding='utf-8') as jsonl_file:
         updated_hashes = processed_hashes.copy()
         with ThreadPoolExecutor() as executor:
             futures = [executor.submit(
@@ -289,8 +306,8 @@ def load_and_process_yaml(
                 future.result()
 
         # Save all updated hashes at the end (not on each file)
-        with open(processed_hashes_filename, 'w') as file:
-            json.dump(updated_hashes, file)
+        with open(processed_hashes_filename, 'w', encoding='utf-8') as file:
+            json.dump(updated_hashes, file, ensure_ascii=False, indent=4)
 
     if error_files:
         logger.warning(f"Failed to process {len(error_files)} files. See log for details.")
