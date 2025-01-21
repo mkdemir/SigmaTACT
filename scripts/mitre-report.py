@@ -2,15 +2,16 @@ import json
 from collections import Counter
 
 # Specify the file path
-file_path = r'output_dir/sigma-rule_2025-01-20.jsonl'  # Specify the file path here
+file_path = r'output_dir/sigma_output_2025-01-21.jsonl'  # Specify the file path here
 
-# Variables to store MITRE Tactics, Techniques, and Sub-techniques information
+# Variables to store MITRE Tactics, Techniques, and Sub-techniques information along with rule titles
 mitre_tactics = []
 mitre_techniques = []
 mitre_sub_techniques = []
 mitre_other_techniques = []
 log_sources = []
 levels = []
+rule_titles = []  # List to store rule titles
 
 # Open the file and read line by line
 print(f"Reading file: {file_path}")
@@ -20,11 +21,19 @@ def normalize_tag(tag):
     return tag.replace("-", "_")  # Replaces "-" characters with "_"
 
 try:
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
             try:
                 data = json.loads(line)  # Each line in JSONL file is a JSON object
-                
+
+                # Data validation
+                if not isinstance(data, dict):
+                    raise ValueError("Invalid data format: Expected a JSON object.")
+
+                # Get rule title
+                rule_title = data.get("title", "Unknown Title")  # Default to "Unknown Title" if no title exists
+                rule_titles.append(rule_title)
+
                 # Check if 'tags' key exists
                 tags = data.get("tags", []) if data.get("tags") is not None else []
 
@@ -34,43 +43,54 @@ try:
 
                     # Tactics: Tags containing 'attack.' with no numerical ID (e.g., attack.initial-access)
                     if "attack." in normalized_tag and normalized_tag.count('.') == 1 and not normalized_tag[8:].isdigit():
-                        mitre_tactics.append(normalized_tag)
+                        mitre_tactics.append((normalized_tag, rule_title))
                     # Techniques: Tags containing 'attack.' with two dots (e.g., attack.execution)
                     elif "attack." in normalized_tag and normalized_tag.count('.') == 1:
-                        mitre_techniques.append(normalized_tag)
+                        mitre_techniques.append((normalized_tag, rule_title))
                     # Sub-techniques: Tags containing 'attack.' with three or more dots (e.g., attack.t1218.003)
                     elif "attack." in normalized_tag and normalized_tag.count('.') >= 2:
-                        mitre_sub_techniques.append(normalized_tag)
+                        mitre_sub_techniques.append((normalized_tag, rule_title))
                     else:
-                        mitre_other_techniques.append(normalized_tag)
-                        
+                        mitre_other_techniques.append((normalized_tag, rule_title))
+
                 # Extract Log Source Category
-                if "logsource_category" in data:
-                    log_sources.append(data["logsource_category"])
-                
+                if "logsource" in data:
+                    log_sources.append(data["logsource"])
+
                 # Extract Level information
                 if "level" in data:
                     levels.append(data["level"])
 
             except json.JSONDecodeError as e:
                 print(f"Error reading {file_path}: {e}")
+            except ValueError as e:
+                print(f"Data validation error: {e}")
 
 except FileNotFoundError:
     print(f"File not found: {file_path}")
 
 # Generate statistics for MITRE Tactics, Techniques, and Sub-techniques
-tactic_counts = Counter(mitre_tactics)
-technique_counts = Counter(mitre_techniques)
-sub_technique_counts = Counter(mitre_sub_techniques)
-other_technique_counts = Counter(mitre_other_techniques)
+tactic_counts = Counter([tactic for tactic, _ in mitre_tactics])
+technique_counts = Counter([technique for technique, _ in mitre_techniques])
+sub_technique_counts = Counter([sub_technique for sub_technique, _ in mitre_sub_techniques])
+other_technique_counts = Counter([other_technique for other_technique, _ in mitre_other_techniques])
 log_source_counts = Counter(log_sources)
 level_counts = Counter(levels)
 
-# Create HTML report
+# Add dynamic category filtering
+def filter_by_category(category, data_list):
+    return [item for item in data_list if category in item]
+
+# Example dynamic filter usage
+selected_category = "attack.execution"
+filtered_techniques = filter_by_category(selected_category, mitre_techniques)
+
+# Create HTML report with dynamic filtering functionality
 html_report = '''
 <html>
 <head>
     <title>MITRE Tactics and Techniques Report</title>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.12.1/css/jquery.dataTables.min.css">
     <style>
         body { 
             font-family: 'Helvetica Neue', Arial, sans-serif; 
@@ -151,7 +171,53 @@ html_report = '''
             margin: 0;
             font-size: 16px;
         }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
     </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.12.1/js/jquery.dataTables.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('#tacticsTable').DataTable();
+            $('#techniquesTable').DataTable();
+            $('#subTechniquesTable').DataTable();
+            $('#otherTechniquesTable').DataTable();
+            $('#logSourcesTable').DataTable();
+            $('#levelsTable').DataTable();
+        });
+        // Dinamik renkler için kategori eşlemeleri
+        const category_colors = {
+            'attack.execution': '#28a745',  // Green
+            'attack.privilege-escalation': '#007bff',  // Blue
+            'attack.persistent-access': '#ffc107',  // Yellow
+            'attack.initial-access': '#dc3545',  // Red
+            // Daha fazla kategori ekleyebilirsiniz
+        };
+        function filterTable(tableId, inputId) {
+            var input, filter, table, tr, td, i, txtValue;
+            input = document.getElementById(inputId);
+            filter = input.value.toUpperCase();
+            table = document.getElementById(tableId);
+            tr = table.getElementsByTagName("tr");
+
+            for (i = 0; i < tr.length; i++) {
+                td = tr[i].getElementsByTagName("td")[0]; // First column is used for filtering
+                if (td) {
+                    txtValue = td.textContent || td.innerText;
+                    if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                        tr[i].style.display = "";
+                    } else {
+                        tr[i].style.display = "none";
+                    }
+                }
+            }
+        }
+    </script>
 </head>
 <body>
     <div class="container">
@@ -166,16 +232,22 @@ html_report = '''
         <!-- MITRE Tactics Table -->
         <h2>Top MITRE Tactics</h2>
         <div class="table-container">
-            <table>
-                <tr><th>Tactic</th><th>Count</th><th>Visualization</th></tr>
+            <table id="tacticsTable" class="display">
+                <thead><tr><th>Tactic</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
+                <tbody>
 '''
-# MITRE Tactics Chart - Adding visual progress bars
+# MITRE Tactics Chart - Adding visual progress bars with DataTables integration
 for tactic, count in tactic_counts.most_common():
     bar_length = (count / max(tactic_counts.values())) * 100
+    rule_titles_for_tactic = [title for tag, title in mitre_tactics if tag == tactic]
+
+    # Taktik için uygun renk
+    #color = category_colors.get(tactic, '#6c757d')  # Varsayılan gri renk
     html_report += f'''
                 <tr>
                     <td>{tactic}</td>
                     <td>{count}</td>
+                    <td>{', '.join(rule_titles_for_tactic)}</td>
                     <td>
                         <div class="progress-bar-container">
                             <div class="progress-bar" style="width: {bar_length}%; background-color: #28a745;"></div>
@@ -184,21 +256,25 @@ for tactic, count in tactic_counts.most_common():
                 </tr>
 '''
 html_report += '''
+                </tbody>
             </table>
         </div>
 
         <!-- MITRE Techniques Table -->
         <h2>Top MITRE Techniques</h2>
         <div class="table-container">
-            <table>
-                <tr><th>Technique</th><th>Count</th><th>Visualization</th></tr>
+            <table id="techniquesTable" class="display">
+                <thead><tr><th>Technique</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
+                <tbody>
 '''
 for technique, count in technique_counts.most_common():
     bar_length = (count / max(technique_counts.values())) * 100
+    rule_titles_for_technique = [title for tag, title in mitre_techniques if tag == technique]
     html_report += f'''
                 <tr>
                     <td>{technique}</td>
                     <td>{count}</td>
+                    <td>{', '.join(rule_titles_for_technique)}</td>
                     <td>
                         <div class="progress-bar-container">
                             <div class="progress-bar" style="width: {bar_length}%; background-color: #007bff;"></div>
@@ -207,24 +283,55 @@ for technique, count in technique_counts.most_common():
                 </tr>
 '''
 html_report += '''
+                </tbody>
             </table>
         </div>
 
         <!-- MITRE Sub-techniques Table -->
         <h2>Top MITRE Sub-techniques</h2>
         <div class="table-container">
-            <table>
-                <tr><th>Sub-technique</th><th>Count</th><th>Visualization</th></tr>
+            <table id="subTechniquesTable" class="display">
+                <thead><tr><th>Sub-technique</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
+                <tbody>
 '''
 for sub_technique, count in sub_technique_counts.most_common():
     bar_length = (count / max(sub_technique_counts.values())) * 100
+    rule_titles_for_sub_technique = [title for tag, title in mitre_sub_techniques if tag == sub_technique]
     html_report += f'''
                 <tr>
                     <td>{sub_technique}</td>
                     <td>{count}</td>
+                    <td>{', '.join(rule_titles_for_sub_technique)}</td>
                     <td>
                         <div class="progress-bar-container">
                             <div class="progress-bar" style="width: {bar_length}%; background-color: #ffc107;"></div>
+                        </div>
+                    </td>
+                </tr>
+'''
+html_report += '''
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Other Techniques Table -->
+        <h2>Other Techniques</h2>
+        <div class="table-container">
+            <table id="otherTechniquesTable" class="display">
+                <thead><tr><th>Other Technique</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
+                <tbody>
+'''
+for other_technique, count in other_technique_counts.most_common():
+    bar_length = (count / max(other_technique_counts.values())) * 100
+    rule_titles_for_other_technique = [title for tag, title in mitre_other_techniques if tag == other_technique]
+    html_report += f'''
+                <tr>
+                    <td>{other_technique}</td>
+                    <td>{count}</td>
+                    <td>{', '.join(rule_titles_for_other_technique)}</td>
+                    <td>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: {bar_length}%; background-color: #dc3545;"></div>
                         </div>
                     </td>
                 </tr>
@@ -235,8 +342,9 @@ html_report += '''
 
         <!-- Log Source Category Table -->
         <h2>Top Log Source Categories</h2>
+        <input type="text" id="logSourcesFilter" onkeyup="filterTable('logSourcesTable', 'logSourcesFilter')" placeholder="Filter Log Sources...">
         <div class="table-container">
-            <table>
+            <table id="logSourcesTable">
                 <tr><th>Log Source Category</th><th>Count</th><th>Visualization</th></tr>
 '''
 for log_source, count in log_source_counts.most_common():
@@ -252,41 +360,15 @@ for log_source, count in log_source_counts.most_common():
                     </td>
                 </tr>
 '''
-
-# MITRE Other Techniques Table
-html_report += '''
-        <!-- MITRE Other Techniques Table -->
-        <h2>Other MITRE Techniques</h2>
-        <div class="table-container">
-            <table>
-                <tr><th>Other Technique</th><th>Count</th><th>Visualization</th></tr>
-'''
-for other_technique, count in other_technique_counts.most_common():
-    bar_length = (count / max(other_technique_counts.values())) * 100
-    html_report += f'''
-                <tr>
-                    <td>{other_technique}</td>
-                    <td>{count}</td>
-                    <td>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" style="width: {bar_length}%; background-color: #dc3545;"></div>
-                        </div>
-                    </td>
-                </tr>
-'''
-html_report += '''
-            </table>
-        </div>
-'''
-
 html_report += '''
             </table>
         </div>
 
         <!-- Levels Table -->
         <h2>Top Levels</h2>
+        <input type="text" id="levelsFilter" onkeyup="filterTable('levelsTable', 'levelsFilter')" placeholder="Filter Levels...">
         <div class="table-container">
-            <table>
+            <table id="levelsTable">
                 <tr><th>Level</th><th>Count</th><th>Visualization</th></tr>
 '''
 for level, count in level_counts.most_common():
@@ -303,9 +385,11 @@ for level, count in level_counts.most_common():
                 </tr>
 '''
 html_report += '''
+                </tbody>
             </table>
         </div>
 
+        <!-- Footer -->
         <div class="footer">
             <p>Report generated using Sigma rules and MITRE ATT&CK framework data.</p>
         </div>
@@ -314,9 +398,7 @@ html_report += '''
 </html>
 '''
 
-# Save the HTML report to a file
-output_html_file = 'mitre_report.html'  # Specify the path where you want to save the HTML file
-with open(output_html_file, 'w') as f:
-    f.write(html_report)
-
-output_html_file  # Return the file path
+# Write the report to an HTML file
+with open("advanced_mitre_report_main.html", "w", encoding="utf-8") as file:
+    file.write(html_report)
+print("Advanced Report with DataTables filtering generated successfully: advanced_mitre_report_main.html")

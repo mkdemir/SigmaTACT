@@ -7,6 +7,7 @@ from hashlib import sha256
 from datetime import datetime, date
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 import time
 
 # Logger Configuration
@@ -19,6 +20,7 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+write_lock = Lock()
 
 def parse_yaml_files(rules_dir: str, exclude_paths: Optional[List[str]] = None) -> List[str]:
     """
@@ -106,10 +108,6 @@ def calculate_file_hash(file_path: str) -> str:
         return ""
     return hash_sha256.hexdigest()
 
-def calculate_hashes_in_parallel(file_paths: List[str]) -> Dict[str, str]:
-    with ThreadPoolExecutor() as executor:
-        return dict(zip(file_paths, executor.map(calculate_file_hash, file_paths)))
-
 def ensure_output_directory(output_dir: str) -> None:
     """
     Ensures the output directory exists. If it doesn't, it is created.
@@ -157,29 +155,10 @@ def date_converter(obj) -> str:
         return obj.isoformat()
     raise TypeError(f"Type {type(obj)} is not serializable")
 
-def load_processed_hashes(filename: str) -> Dict[str, str]:
-    """
-    Loads previously processed file hashes from a JSON file.
-
-    Args:
-        filename (str): The file containing hashes of previously processed files.
-
-    Returns:
-        Dict[str, str]: A dictionary mapping file paths to their respective hashes.
-    """
-    if os.path.exists(filename):
-        try:
-            with open(filename, 'r', encoding='utf-8') as file:
-                return json.load(file)
-        except json.JSONDecodeError as e:
-            logger.error(f"Error decoding JSON from {filename}: {e}")
-    return {}
-
 def process_yaml_file(
     yaml_file: str, 
     processed_hashes: Dict[str, str], 
     jsonl_file, 
-    processed_hashes_filename: str,
     updated_hashes: Dict[str, str],
     error_files: List[str]
 ) -> None:
@@ -191,7 +170,6 @@ def process_yaml_file(
         yaml_file (str): The YAML file to process.
         processed_hashes (Dict[str, str]): The dictionary of processed file hashes.
         jsonl_file: The open JSONL file to write to.
-        processed_hashes_filename (str): The file containing the hashes of processed files.
         updated_hashes (Dict[str, str]): Dictionary to collect updated file hashes.
     """
     start_time = time.time()
@@ -215,12 +193,20 @@ def process_yaml_file(
                 # item['file_name'] = os.path.basename(yaml_file)
                 # json.dump(item, jsonl_file, default=date_converter)
                 # Extract only the title and description
+                product = item.get('logsource', {}).get('product', None)
+                category = item.get('logsource', {}).get('category', None)
+
                 output_item = {
                     'title': item.get('title', None),
                     'status': item.get('status', None),
                     'description': item.get('description', None),
+                    'references': item.get('references', None),
+                    'date': item.get('date', None),
+                    'modified': item.get('modified', None),
                     'tags': item.get('tags', None),
-                    'logsource_category': item.get('logsource', {}).get('category', None),
+                    'product': product,
+                    'category': category,
+                    'logsource': f"{product}-{category}" if product and category else None,
                     'level': item.get('level', None),
                     'file_hash': file_hash,
                     'process_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -229,9 +215,12 @@ def process_yaml_file(
                 }
 
                 # Dump the selected fields to the JSONL file
-                json.dump(output_item, jsonl_file, default=date_converter, ensure_ascii=False)
-                
-                jsonl_file.write("\n")
+                with write_lock:
+                    try:
+                        json.dump(output_item, jsonl_file, default=date_converter, ensure_ascii=False)
+                        jsonl_file.write("\n")
+                    except Exception as e:
+                        logger.error(f"Error writing JSON line: {e}, Item: {output_item}")
 
             updated_hashes[yaml_file] = file_hash
             logger.info(f"File {yaml_file} processed and hash recorded: {file_hash}")
@@ -241,36 +230,6 @@ def process_yaml_file(
     finally:
         elapsed_time = time.time() - start_time
         logger.info(f"File {yaml_file} processed in {elapsed_time:.2f} seconds.")
-
-def parse_arguments() -> argparse.Namespace:
-    """
-    Parses command-line arguments.
-
-    Returns:
-        argparse.Namespace: Namespace containing the parsed arguments.
-    """
-    parser = argparse.ArgumentParser(description="Parse and process Sigma YAML files.")
-    parser.add_argument(
-        'rules_dir', 
-        type=str, 
-        help="Directory containing the Sigma YAML rules (default is 'rules').",
-        nargs='?', 
-        default='rules'
-    )
-    parser.add_argument(
-        '--output', 
-        type=str, 
-        help="Base name for the output file (default is 'output').",
-        default='sigma-rule'
-    )
-    parser.add_argument(
-        '--exclude', 
-        type=str, 
-        nargs='*', 
-        help="List of paths to exclude from the search.",
-        default=[]
-    )
-    return parser.parse_args()
 
 def load_and_process_yaml(
     yaml_files: List[str], 
@@ -290,49 +249,65 @@ def load_and_process_yaml(
         return
 
     # Load previously processed hashes
-    processed_hashes = load_processed_hashes(processed_hashes_filename)
+    processed_hashes = {}
+    if os.path.exists(processed_hashes_filename):
+        try:
+            with open(processed_hashes_filename, 'r', encoding='utf-8') as file:
+                processed_hashes = json.load(file)
+        except Exception as e:
+            logger.error(f"Error loading processed hashes from {processed_hashes_filename}: {e}")
+
+    updated_hashes = {}
     error_files = []
 
+    # Open the JSONL file for appending
+    try:
+        with open(output_filename, 'a', encoding='utf-8') as jsonl_file:
+            with ThreadPoolExecutor() as executor:
+                for yaml_file in yaml_files:
+                    executor.submit(
+                        process_yaml_file,
+                        yaml_file,
+                        processed_hashes,
+                        jsonl_file,
+                        updated_hashes,
+                        error_files
+                    )
+    except Exception as e:
+        logger.error(f"Error opening output file {output_filename}: {e}")
 
-    # Open the output file in append mode
-    with open(output_filename, 'w', encoding='utf-8') as jsonl_file:
-        updated_hashes = processed_hashes.copy()
-        with ThreadPoolExecutor() as executor:
-            futures = [executor.submit(
-                process_yaml_file, yaml_file, processed_hashes, jsonl_file, 
-                processed_hashes_filename, updated_hashes, error_files
-            ) for yaml_file in yaml_files]
-            for future in futures:
-                future.result()
-
-        # Save all updated hashes at the end (not on each file)
+    # Save updated hashes
+    try:
         with open(processed_hashes_filename, 'w', encoding='utf-8') as file:
-            json.dump(updated_hashes, file, ensure_ascii=False, indent=4)
+            json.dump({**processed_hashes, **updated_hashes}, file, ensure_ascii=False, indent=4)
+            logger.info(f"Processed hashes updated and saved to {processed_hashes_filename}.")
+    except Exception as e:
+        logger.error(f"Error saving processed hashes to {processed_hashes_filename}: {e}")
 
     if error_files:
-        logger.warning(f"Failed to process {len(error_files)} files. See log for details.")
-        for file in error_files:
-            logger.warning(f"Error processing: {file}")
-
-def main() -> None:
-    """
-    Main function to execute the script logic.
-    """
-    # Parse arguments from command line
-    args = parse_arguments()
-
-    # Generate output filename with the current date
-    output_filename = generate_output_filename(args.output)
-
-    # Log the output file path
-    logger.info(f"Output file will be saved to: {output_filename}")
-
-    # Find all YAML files in the specified directory, excluding specified paths
-    yaml_files = parse_yaml_files(args.rules_dir, exclude_paths=args.exclude)
-
-    # Load and process the YAML files, outputting in JSON Lines format
-    load_and_process_yaml(yaml_files, output_filename)
-    logger.info(f"Sigma YAML processing complete. Output saved to {output_filename}")
+        logger.warning(f"The following files encountered errors during processing: {error_files}")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Parse Sigma YAML files and convert them to JSONL format.")
+    parser.add_argument(
+        "--rules-dir", type=str, required=True,
+        help="Root directory containing Sigma YAML files."
+    )
+    parser.add_argument(
+        "--output-dir", type=str, default="output_dir",
+        help="Directory to save the output JSONL file. (default: output_dir)"
+    )
+    parser.add_argument(
+        "--exclude-paths", type=str, nargs="*",
+        help="List of paths to exclude from processing."
+    )
+
+    args = parser.parse_args()
+
+    rules_dir = args.rules_dir
+    output_dir = args.output_dir
+    exclude_paths = args.exclude_paths
+
+    yaml_files = parse_yaml_files(rules_dir, exclude_paths)
+    output_filename = generate_output_filename("sigma_output", output_dir)
+    load_and_process_yaml(yaml_files, output_filename)
