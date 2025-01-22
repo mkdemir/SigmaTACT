@@ -1,11 +1,30 @@
 import glob
 import os
+import sys
 import json
 from collections import Counter
 from datetime import datetime
 
+def print_banner():
+    """Prints a formatted banner with script details."""
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    RESET = "\033[0m"
+
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    print(CYAN + "=" * 60 + RESET)
+    print(GREEN + "             MITRE Report Script".center(60) + RESET)
+    print(GREEN + "          Developed by Mustafa Kaan Demir".center(60) + RESET)
+    print(GREEN + f"          Version: 1.0.0".center(60) + RESET)
+    print(GREEN + f"          Date: {current_time}".center(60) + RESET)
+    print(CYAN + "=" * 60 + RESET)
+    print("\nInitializing the script...\n")
+
+print_banner()
+
 # Output directory
-output_dir = 'output_dir'  # Belirtilen dizin
+output_dir = 'output_dir'  # Specified directory
 
 # Determine the file pattern
 file_pattern = os.path.join(output_dir, 'sigma_output_*.jsonl')
@@ -16,9 +35,10 @@ matching_files = glob.glob(file_pattern)
 if matching_files:
     # Use the first matching file (or you can process all files)
     file_path = matching_files[0]
-    print(f"File path selected: {file_path}")
+    print(f"[+] File path selected: {file_path}")
 else:
-    print("No matching files found.")
+    print("[-] No matching files found.")
+    sys.exit(1) 
 
 # Variables to store MITRE Tactics, Techniques, and Sub-techniques information along with rule titles
 mitre_tactics = []
@@ -33,7 +53,7 @@ dates_modified = []  # List to store date modified
 references = []  # List to store references
 
 # Open the file and read line by line
-print(f"Reading file: {file_path}")
+print(f"[+] Reading file: {file_path}")
 
 # Normalization function (removes unwanted characters)
 def normalize_tag(tag):
@@ -96,12 +116,12 @@ try:
                     levels.append(data["level"])
 
             except json.JSONDecodeError as e:
-                print(f"Error reading {file_path}: {e}")
+                print(f"[-] Error reading {file_path}: {e}")
             except ValueError as e:
-                print(f"Data validation error: {e}")
+                print(f"[-] Data validation error: {e}")
 
 except FileNotFoundError:
-    print(f"File not found: {file_path}")
+    print(f"[-] File not found: {file_path}")
 
 # Generate statistics for MITRE Tactics, Techniques, and Sub-techniques
 tactic_counts = Counter([tactic for tactic, _ in mitre_tactics])
@@ -256,7 +276,7 @@ html_report = '''
 </head>
 <body>
     <div class="container">
-        <h1>MITRE Tactics and Techniques Report</h1>
+        <h1>SigmaTACT - MITRE Tactics and Techniques Report</h1>
         
         <!-- Summary -->
         <div class="summary">
@@ -284,7 +304,7 @@ html_report = '''
                 <thead><tr><th>Tactic</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
                 <tbody>
 '''
-# MITRE Tactics Chart - Adding visual progress bars with DataTables integration
+# MITRE Tactics Table - Adding visual progress bars with DataTables integration
 for tactic, count in tactic_counts.most_common():
     bar_length = (count / max(tactic_counts.values())) * 100
     rule_titles_for_tactic = [title for tag, title in mitre_tactics if tag == tactic]
@@ -300,6 +320,7 @@ for tactic, count in tactic_counts.most_common():
                     </td>
                 </tr>
 '''
+# MITRE Techniques Table
 html_report += '''
                 </tbody>
             </table>
@@ -327,6 +348,7 @@ for technique, count in technique_counts.most_common():
                     </td>
                 </tr>
 '''
+# MITRE Sub-Techniques Table
 html_report += '''
                 </tbody>
             </table>
@@ -354,6 +376,7 @@ for sub_technique, count in sub_technique_counts.most_common():
                     </td>
                 </tr>
 '''
+# Other Techniques Table
 html_report += '''
                 </tbody>
             </table>
@@ -381,6 +404,7 @@ for other_technique, count in other_technique_counts.most_common():
                     </td>
                 </tr>
 '''
+# Log Source Category Table
 html_report += '''
                 </tbody>
             </table>
@@ -408,6 +432,7 @@ for log_source, count in log_source_counts.most_common():
                     </td>
                 </tr>
 '''
+# Top Levels Table
 html_report += '''
                 </tbody>
             </table>
@@ -435,6 +460,7 @@ for level, count in level_counts.most_common():
                     </td>
                 </tr>
 '''
+# Rule Details Table
 html_report += '''
                 </tbody>
             </table>
@@ -484,10 +510,10 @@ html_report += '''
 current_date = datetime.now().strftime("%Y-%m-%d")
 
 # Create file name by date
-file_name = f"mitre_report_{current_date}.html"
+file_name = f"SIGMA_MITRE_{current_date}.html"
 
 # Generate and save HTML report
 with open(file_name, "w", encoding="utf-8") as file:
     file.write(html_report)
 
-print(f"Advanced Report with DataTables filtering generated successfully: {file_name}")
+print(f"[+] Advanced Report with DataTables filtering generated successfully: {file_name}")
