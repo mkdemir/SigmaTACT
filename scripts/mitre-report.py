@@ -312,7 +312,15 @@ for tactic, count in tactic_counts.most_common():
                 <tr>
                     <td>{tactic}</td>
                     <td>{count}</td>
-                    <td>{', '.join(rule_titles_for_tactic)}</td>
+                    <td>
+                        <details style="cursor: pointer;">
+                            <summary>Show Rules ({len(rule_titles_for_tactic)})</summary>
+                            <br>
+                            <ul style="margin: 0; padding: 0 0 0 15px;">
+                                {''.join(f"<li style='list-style-type: circle;'>{title}</li>" for title in rule_titles_for_tactic)}
+                            </ul>
+                        </details>
+                    </td>             
                     <td>
                         <div class="progress-bar-container">
                             <div class="progress-bar" style="width: {bar_length}%; background-color: #28a745;"></div>
