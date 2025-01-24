@@ -288,7 +288,7 @@ def generate_html_report(data, output_file):
             <h2>Top MITRE Tactics</h2>
             <div class="table-container">
                 <table id="tacticsTable" class="display">
-                    <thead><tr><th>Tactic</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
+                    <thead><tr><th>Tactic</th><th>Count</th><th>Rule Title</th><th>Count Bar</th></tr></thead>
                     <tbody>
     '''
 
@@ -296,6 +296,22 @@ def generate_html_report(data, output_file):
     for tactic, count in tactic_counts.most_common():
         bar_length = (count / max(tactic_counts.values())) * 100
         rule_details_for_tactic = [(title, level, description, date, references) for tag, title, level, description, date, references in data["tactics"] if tag == tactic]
+        table_id = f"table_{tactic}"
+
+        # Add DataTables initialization script
+        html_report += '''
+        <script>
+            $(document).ready(function() {
+                $('table.display').each(function() {
+                    if (!$.fn.DataTable.isDataTable(this)) {
+                        $(this).DataTable({
+                            "pageLength": 10
+                        });
+                    }
+                });
+            });
+        </script>
+        '''
 
         html_report += f'''
                     <tr>
@@ -305,9 +321,18 @@ def generate_html_report(data, output_file):
                             <details style="cursor: pointer;">
                                 <summary>Show Rules ({len(rule_details_for_tactic)})</summary>
                                 <br>
-                                <ul style="margin: 0; padding: 0 0 0 15px;">
-                                    {''.join(f"<li style='list-style-type: circle;'>{title} - Level: {level}<br>Description: {description}<br></li>" for title, level, description, date, references in rule_details_for_tactic)}
-                                </ul>
+                                <table class="display" style="width:100%" id="{table_id}">
+                                    <thead>
+                                        <tr>
+                                            <th>Title</th>
+                                            <th>Level</th>
+                                            <th>Description</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {''.join(f"<tr><td style='word-wrap: break-word; max-width: 150px; overflow-wrap: break-word;'>{title}</td><td style='word-wrap: break-word; max-width: 100px; overflow-wrap: break-word;'>{level}</td><td style='word-wrap: break-word; max-width: 300px; overflow-wrap: break-word;'>{description}</td></tr>" for title, level, description, date, references in rule_details_for_tactic)}
+                                    </tbody>
+                                </table>
                             </details>
                         </td>             
                         <td>
@@ -316,7 +341,7 @@ def generate_html_report(data, output_file):
                             </div>
                         </td>
                     </tr>
-    '''
+        '''
 
     # MITRE Techniques Table
     html_report += '''
@@ -328,7 +353,7 @@ def generate_html_report(data, output_file):
             <h2>Top MITRE Techniques</h2>
             <div class="table-container">
                 <table id="techniquesTable" class="display">
-                    <thead><tr><th>Technique</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
+                    <thead><tr><th>Technique</th><th>Count</th><th>Rule Title</th><th>Count Bar</th></tr></thead>
                     <tbody>
     '''
     for technique, count in technique_counts.most_common():
@@ -366,7 +391,7 @@ def generate_html_report(data, output_file):
             <h2>Top MITRE Sub-Techniques</h2>
             <div class="table-container">
                 <table id="subTechniquesTable" class="display">
-                    <thead><tr><th>Sub-Technique</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
+                    <thead><tr><th>Sub-Technique</th><th>Count</th><th>Rule Title</th><th>Count Bar</th></tr></thead>
                     <tbody>
     '''
     for sub_technique, count in sub_technique_counts.most_common():
@@ -404,7 +429,7 @@ def generate_html_report(data, output_file):
             <h2>Top MITRE Other Techniques</h2>
             <div class="table-container">
                 <table id="otherTechniquesTable" class="display">
-                    <thead><tr><th>Other Technique</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
+                    <thead><tr><th>Other Technique</th><th>Count</th><th>Rule Title</th><th>Count Bar</th></tr></thead>
                     <tbody>
     '''
     for other_technique, count in other_technique_counts.most_common():
@@ -441,7 +466,7 @@ def generate_html_report(data, output_file):
             <h2>Top Log Source Categories</h2>
             <div class="table-container">
                 <table id="logSourcesTable" class="display">
-                    <thead><tr><th>Log Source Category</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
+                    <thead><tr><th>Log Source Category</th><th>Count1</th><th>Rule Title</th><th>Count Bar</th></tr></thead>
                     <tbody>
     '''
     for log_source, count in log_source_counts.most_common():
@@ -451,14 +476,22 @@ def generate_html_report(data, output_file):
                     <tr>
                         <td>{log_source}</td>
                         <td>{count}</td>
-                        <td>{', '.join(rule_titles_for_log_source)}</td>
+                        <td>
+                            <details style="cursor: pointer;">
+                                <summary>Show Rules ({len(rule_titles_for_log_source)})</summary>
+                                <br>
+                                <ul style="margin: 0; padding: 0 0 0 15px;">
+                                    {''.join(f"<li style='list-style-type: circle;'>{title}</li>" for title in rule_titles_for_log_source)}
+                                </ul>
+                            </details>
+                        </td>    
                         <td>
                             <div class="progress-bar-container">
                                 <div class="progress-bar" style="width: {bar_length}%; background-color: #17a2b8;"></div>
                             </div>
                         </td>
                     </tr>
-    '''
+        '''
     # Top Levels Table
     html_report += '''
                     </tbody>
@@ -469,24 +502,33 @@ def generate_html_report(data, output_file):
             <h2>Top Levels</h2>
             <div class="table-container">
                 <table id="levelsTable" class="display">
-                    <thead><tr><th>Level</th><th>Count</th><th>Rule Title</th><th>Visualization</th></tr></thead>
+                    <thead><tr><th>Level</th><th>Count</th><th>Rule Title</th><th>Count Bar</th></tr></thead>
                     <tbody>
     '''
     for level, count in level_counts.most_common():
         bar_length = (count / max(level_counts.values())) * 100
         rule_titles_for_level = [title for lvl, title in zip(data["levels"], data["rule_titles"]) if lvl == level]
+
         html_report += f'''
                     <tr>
                         <td>{level}</td>
                         <td>{count}</td>
-                        <td>{', '.join(rule_titles_for_level)}</td>
+                        <td>
+                            <details style="cursor: pointer;">
+                                <summary>Show Rules ({len(rule_titles_for_level)})</summary>
+                                <br>
+                                <ul style="margin: 0; padding: 0 0 0 15px;">
+                                    {''.join(f"<li style='list-style-type: circle;'>{title}</li>" for title in rule_titles_for_level)}
+                                </ul>
+                            </details>
+                        </td>
                         <td>
                             <div class="progress-bar-container">
                                 <div class="progress-bar" style="width: {bar_length}%; background-color: #dc3545;"></div>
                             </div>
                         </td>
                     </tr>
-    '''
+        '''
     # Rule Details Table
     html_report += '''
                     </tbody>
